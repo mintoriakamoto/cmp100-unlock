@@ -9,14 +9,30 @@ soft-warns on the rest.
 | item | value |
 |---|---|
 | GPU | NVIDIA CMP 100-210, PCI `10de:1df4` rev a1, subsystem `10de:12b8`, 2 cards |
-| VBIOS | 88.00.51.00.04 |
-| HBM2 | 16 GiB physical (`nvidia-smi` shows 16384 MiB; product name reports V100-PCIE-12GB after unlock) |
+| VBIOS | **88.00.51.00.04, a Tesla V100 VBIOS flashed by the owner before this work** (subsystem `10de:12b8`). Stock CMP 100-210 ships 88.00.9D.00.00 and identifies as "CMP 100-210"; these cards identify as `Tesla V100-PCIE-12GB` even while locked (tensor=0x999, Gen1) |
+| HBM2 | 16 GiB physical (`nvidia-smi` shows 16384 MiB) |
 | Board | ASUS TUF GAMING B650E-PLUS WIFI, AMI BIOS 3886 (2026-06-24) |
 | CPU / RAM | AMD Ryzen 9 9950X, 32 GB |
 | Card 1 slot | CPU root port `0000:00:01.1` (AMD 1022:14db), x1 riser, BIOS targets Gen1 by default |
 | Card 2 slot | behind chipset PCIe switch `0000:04:00.0` (AMD 1022:43f5), x1 riser, target Gen4 |
 | Secure Boot | disabled (`mokutil --sb-state`) |
 | Display | headless; GDM and switcheroo-control masked, default target multi-user |
+
+### VBIOS note
+
+The two test cards had already been flashed with a V100 VBIOS (88.00.51.00.04) when
+this project started; the Tensor gate (0x409664=0x999) and Gen1 link were still locked
+with that VBIOS, and the signed-ACR unlock here is what lifts them. So:
+
+- the V100 VBIOS alone does **not** unlock Tensor or Gen2 on `10de:1df4`;
+- upstream CmpUnlocker validated the same unlock on the stock CMP VBIOS
+  (88.00.9D.00.00, `10de:1d84`), so a VBIOS flash is not believed to be required;
+- but our only verified configuration is the V100 VBIOS. If you are on stock CMP
+  VBIOS and it fails, report the `vbios_version` and `pci.sub_device_id` from
+  `nvidia-smi --query-gpu=vbios_version,pci.sub_device_id --format=csv`.
+
+This project does not flash anything. Flashing a VBIOS is a separate, non-volatile,
+card-bricking-capable step outside its scope.
 
 Also accepted by the code: `10de:1d84` (the SKU upstream CmpUnlocker validated). The
 hook and script refuse every other device ID.

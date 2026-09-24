@@ -13,14 +13,14 @@ flashed: no VBIOS, no eFuse. Reset or power loss puts the card back to stock.
 
 ## What you get
 
-Measured on two `10de:1df4` cards, driver 550.163.01, Ubuntu 22.04 HWE 6.8:
+Measured on two `10de:1df4` cards carrying a pre-flashed Tesla V100 VBIOS (88.00.51.00.04),
+driver 550.163.01, Ubuntu 22.04 HWE 6.8:
 
 | | stock | unlocked |
 |---|---|---|
 | HMMA (`wmma m16n16k16`) dependent latency | ~512 cycles | 36.8 cycles |
 | FP16 tensor throughput per card | ~6 TFLOP/s | 86.7 TFLOP/s |
 | PCIe link | Gen1 x1 (2.5 GT/s) | Gen2 x1 (5 GT/s) |
-| `nvidia-smi` name | CMP 100-210 | Tesla V100-PCIE-12GB |
 
 Run `cmp100-bench` after install to see the numbers on your card (it uses PTX JIT
 through libcuda, no CUDA toolkit required).
@@ -59,6 +59,9 @@ The whole pass takes about 3 s per card for Tensor and 5-8 s for Gen2.
 Full tested spec (board, slots, driver, firmware hashes, timings): [docs/PREREQUISITES.md](docs/PREREQUISITES.md).
 
 - CMP 100-210: `10de:1d84` or `10de:1df4`. Check with `lspci -nn | grep 10de`.
+- VBIOS: tested only with a Tesla V100 VBIOS (88.00.51.00.04) already on the cards;
+  upstream validated the same technique on stock CMP VBIOS 88.00.9D.00.00. See
+  docs/PREREQUISITES.md, "VBIOS note". This tool never flashes.
 - Proprietary NVIDIA driver (550.163.01 tested; users report newer works). **Not**
   the open kernel module flavour: Volta is not supported there.
 - `linux-firmware` providing `nvidia/gv100/{gr/fecs_sig.bin,acr/bl.bin,acr/ucode_load.bin}`
