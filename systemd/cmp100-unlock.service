@@ -1,0 +1,20 @@
+[Unit]
+Description=Volatile Tensor + PCIe Gen2 unlock for NVIDIA CMP 100-210
+Documentation=https://github.com/father-lab/cmp100-unlock
+After=systemd-modules-load.service systemd-udev-settle.service systemd-udevd.service
+Wants=systemd-udev-settle.service
+# Must own the GPUs before anything opens them.
+Before=display-manager.service graphical.target nvidia-persistenced.service docker.service containerd.service ollama.service
+ConditionKernelCommandLine=!cmp100.skip
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/cmp100-unlock
+# A wedged sysfs write cannot be killed; this bound only stops boot from hanging forever.
+TimeoutStartSec=300
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

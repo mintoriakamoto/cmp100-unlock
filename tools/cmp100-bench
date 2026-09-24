@@ -1,0 +1,68 @@
+#!/usr/bin/env python3
+# Tensor-core proof without CUDA toolkit: PTX wmma m16n16k16 (HMMA) JIT-compiled by libcuda.
+# Reports dependent-chain HMMA latency (cycles) and aggregate FP16 tensor throughput per GPU.
+import ctypes, sys
+cu = ctypes.CDLL("libcuda.so.1")
+def ck(r, what):
+    if r != 0:
+        s = ctypes.c_char_p(); cu.cuGetErrorString(r, ctypes.byref(s))
+        raise SystemExit(f"{what} failed: {r} {s.value}")
+A = ",".join(f"%a{i}" for i in range(8)); B = ",".join(f"%b{i}" for i in range(8))
+D = ",".join(f"%d{i}" for i in range(8))
+init = "".join(f"mov.b32 %a{i},0x3c003c00;\nmov.b32 %b{i},0x00010001;\nmov.f32 %d{i},0f00000000;\n" for i in range(8))
+PTX = f""".version 6.3
+.target sm_70
+.address_size 64
+.visible .entry k(.param .u64 out, .param .u32 n) {{
+.reg .b32 %a<8>; .reg .b32 %b<8>; .reg .f32 %d<8>; .reg .u64 %t0,%t1,%o,%off; .reg .u32 %i,%n,%tx,%g; .reg .pred %p;
+{init}ld.param.u64 %o,[out]; ld.param.u32 %n,[n];
+mov.u32 %i,0;
+bar.sync 0;
+mov.u64 %t0,%clock64;
+L: wmma.mma.sync.aligned.row.col.m16n16k16.f32.f32 {{{D}}},{{{A}}},{{{B}}},{{{D}}};
+add.u32 %i,%i,1; setp.lt.u32 %p,%i,%n; @%p bra L;
+mov.u64 %t1,%clock64;
+mov.u32 %tx,%tid.x; mov.u32 %g,%ctaid.x;
+or.b32 %g,%g,%tx; setp.ne.u32 %p,%g,0; @%p bra E;
+sub.u64 %t1,%t1,%t0; st.global.u64 [%o],%t1;
+st.global.f32 [%o+8],%d0;
+E: ret;
+}}
+""".encode()
+ck(cu.cuInit(0), "cuInit")
+n = ctypes.c_int(); ck(cu.cuDeviceGetCount(ctypes.byref(n)), "count")
+for dev_i in range(n.value):
+    dev = ctypes.c_int(); ck(cu.cuDeviceGet(ctypes.byref(dev), dev_i), "dev")
+    bus = ctypes.create_string_buffer(32); cu.cuDeviceGetPCIBusId(bus, 32, dev)
+    sms = ctypes.c_int(); cu.cuDeviceGetAttribute(ctypes.byref(sms), 16, dev)
+    clk = ctypes.c_int(); cu.cuDeviceGetAttribute(ctypes.byref(clk), 13, dev)
+    ctx = ctypes.c_void_p(); ck(cu.cuCtxCreate_v2(ctypes.byref(ctx), 0, dev), "ctx")
+    mod = ctypes.c_void_p(); log = ctypes.create_string_buffer(8192)
+    opts = (ctypes.c_int * 2)(5, 6)  # CU_JIT_ERROR_LOG_BUFFER, _SIZE_BYTES
+    vals = (ctypes.c_void_p * 2)(ctypes.cast(log, ctypes.c_void_p), ctypes.c_void_p(8192))
+    r = cu.cuModuleLoadDataEx(ctypes.byref(mod), PTX, 2, opts, vals)
+    if r: print(log.value.decode()); ck(r, "module/JIT")
+    fn = ctypes.c_void_p(); ck(cu.cuModuleGetFunction(ctypes.byref(fn), mod, b"k"), "func")
+    buf = ctypes.c_uint64(); ck(cu.cuMemAlloc_v2(ctypes.byref(buf), 16), "alloc")
+    def run(iters, grid, block):
+        p_out = ctypes.c_uint64(buf.value); p_n = ctypes.c_uint32(iters)
+        args = (ctypes.c_void_p * 2)(ctypes.cast(ctypes.byref(p_out), ctypes.c_void_p), ctypes.cast(ctypes.byref(p_n), ctypes.c_void_p))
+        e0, e1 = ctypes.c_void_p(), ctypes.c_void_p()
+        cu.cuEventCreate(ctypes.byref(e0), 0); cu.cuEventCreate(ctypes.byref(e1), 0)
+        cu.cuEventRecord(e0, None)
+        ck(cu.cuLaunchKernel(fn, grid, 1, 1, block, 1, 1, 0, None, args, None), "launch")
+        cu.cuEventRecord(e1, None); ck(cu.cuCtxSynchronize(), "sync")
+        ms = ctypes.c_float(); cu.cuEventElapsedTime(ctypes.byref(ms), e0, e1)
+        out = (ctypes.c_uint64 * 2)(); ck(cu.cuMemcpyDtoH_v2(out, buf, 16), "copy")
+        return out[0], ms.value
+    run(1000, 1, 32)  # warm-up
+    iters = 20000
+    cyc, _ = run(iters, 1, 32)
+    lat = cyc / iters
+    warps_per_sm = 8
+    grid, block, it2 = sms.value * 4, 32 * warps_per_sm // 4 * 4, 20000
+    _, ms = run(it2, grid, block)
+    flops = 2 * 16 * 16 * 16 * it2 * grid * (block // 32)
+    print(f"GPU{dev_i} {bus.value.decode()} SMs={sms.value} clk={clk.value//1000}MHz  "
+          f"HMMA dependent latency={lat:.1f} cycles  FP16 tensor throughput={flops/ms/1e9:.1f} TFLOP/s")
+    cu.cuCtxDestroy_v2(ctx)
