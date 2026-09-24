@@ -1,0 +1,21 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install lint tools
+        run: pip install shellcheck-py pyflakes
+      - name: Syntax
+        run: bash -n install.sh uninstall.sh sbin/cmp100-unlock tests/mocks.sh
+      - name: shellcheck
+        run: shellcheck -S warning install.sh uninstall.sh sbin/cmp100-unlock tests/mocks.sh
+      - name: pyflakes
+        run: pyflakes tools/build_payloads.py tools/cmp100-bench tools/cmp100-pcie-bw tests/test_unlock_flow.py
+      - name: Unit tests (mocked hardware)
+        run: python3 -m unittest -v tests/test_unlock_flow.py

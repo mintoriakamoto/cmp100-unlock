@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # PCIe H2D/D2H bandwidth per GPU via the CUDA driver API (no toolkit needed).
-import ctypes, time, sys
+import ctypes, time
 cu = ctypes.CDLL("libcuda.so.1")
 def ck(r, w):
     if r != 0:

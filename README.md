@@ -65,6 +65,16 @@ Run `cmp100-bench` (HMMA latency / FP16 throughput) and `cmp100-pcie-bw` (host-d
 copy bandwidth) after install to see the numbers on your card. Both use libcuda
 directly, no CUDA toolkit required.
 
+> **nvidia-smi will always say PCIe gen 2. The link is really Gen3.**
+> The NVIDIA driver re-clamps the *capability* register when it loads and
+> `nvidia-smi` reads that register, so `pcie.link.gen.current` shows 2 (or 1)
+> forever. It never downshifts the trained link. The physical link speed is in
+> `lspci -vv` (`LnkSta: Speed 8GT/s (strange)` — "strange" is lspci noticing the
+> link is faster than the advertised cap), in
+> `/sys/bus/pci/devices/<bdf>/current_link_speed` (`8.0 GT/s PCIe`), and in the
+> measured ~0.8 GB/s from `cmp100-pcie-bw`. `cmp100-unlock status` prints the
+> real LnkSta and a reminder line for exactly this reason.
+
 ## How it works
 
 The card's Tensor gate is a register (`0x409664`) that only the signed ACR firmware
@@ -208,6 +218,7 @@ Card in a bad state after a failure: **reboot**. Do not poke sysfs bind/unbind b
     docs/RESULTS.md               boot journal and benchmark output
     docs/REGISTERS.md             BAR0 register map, the PCIe clamp bits, what is CPU-writable
     docs/TROUBLESHOOTING.md       failure messages and what to do
+    CHANGELOG.md                  release notes
     LICENSE                       GPL-2.0
 
 ## Credits
