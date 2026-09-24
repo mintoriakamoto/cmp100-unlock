@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # Tensor-core proof without CUDA toolkit: PTX wmma m16n16k16 (HMMA) JIT-compiled by libcuda.
 # Reports dependent-chain HMMA latency (cycles) and aggregate FP16 tensor throughput per GPU.
-import ctypes, sys
+import ctypes
 cu = ctypes.CDLL("libcuda.so.1")
 def ck(r, what):
     if r != 0:

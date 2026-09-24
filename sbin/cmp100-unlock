@@ -39,8 +39,10 @@ BOOT_ID_FILE=${CMP100_BOOT_ID_FILE:-/proc/sys/kernel/random/boot_id}
 REG_TENSOR=0x409664      # 0x888 = Tensor unlocked, 0x999 = stock
 REG_PCIE_POLICY=0x88610  # signed write target, expect 1
 REG_PCIE_VECTOR=0x8872c  # signed write target, expect 6
+# shellcheck disable=SC2034  # documents the register map (docs/REGISTERS.md); not read by the script
 REG_LINK_CAP=0x88084     # bits 3:0 = max supported gen
 REG_LINK_STATUS=0x88088  # bits 19:16 = current gen
+# shellcheck disable=SC2034  # documents the register map (docs/REGISTERS.md); not read by the script
 REG_LINK_TARGET=0x880a8  # bits 3:0 = target gen
 REG_XP_CONFIG=0x8c040    # bits 19:18 = rate field, bit 0 = CHANGE_SPEED
 
@@ -457,7 +459,7 @@ tensor_one() {
 # endpoint only advertises Gen2 after an NVIDIA rebind, so we retry the
 # unbind/retrain/rebind cycle a few times instead of failing on the first pass.
 gen2_one() {
-    local bdf=$1 root attempt gen cur cfg req st field
+    local bdf=$1 root attempt gen cur cfg req field
     root=$(parent_port "$bdf")
     if [[ $(pcie_sta_speed "$bdf") == 2 && $(nvidia_cur_gen "$bdf" || echo 0) == 2 ]]; then
         say "$bdf: already Gen2"; return 0
@@ -496,11 +498,11 @@ gen2_one() {
         (( $(mmio_read "$bdf" $REG_XP_CONFIG) == req )) || die "$bdf 0x8c040 rate field did not take"
         mmio_write "$bdf" $REG_XP_CONFIG "$(printf '0x%08x' "$((req | 1))")"   # CHANGE_SPEED
         gen=0
-        for st in $(seq 1 10); do gen=$(link_gen_of "$bdf"); (( gen == 2 )) && break; sleep 0.1; done
+        for _ in $(seq 1 10); do gen=$(link_gen_of "$bdf"); (( gen == 2 )) && break; sleep 0.1; done
         if (( gen != 2 )); then
             say "$bdf: endpoint CHANGE_SPEED left Gen$gen; retraining from $root"
             setpci -s "$root" CAP_EXP+10.w=0020:0020
-            for st in $(seq 1 20); do sleep 0.1; (( (16#$(setpci -s "$root" CAP_EXP+12.w) & 0x800) == 0 )) && break; done
+            for _ in $(seq 1 20); do sleep 0.1; (( (16#$(setpci -s "$root" CAP_EXP+12.w) & 0x800) == 0 )) && break; done
             sleep 0.2; gen=$(link_gen_of "$bdf")
         fi
         say "$bdf: physical link Gen$gen, LnkSta Gen$(pcie_sta_speed "$bdf"), 0x8c040=$(mmio_read "$bdf" $REG_XP_CONFIG)"

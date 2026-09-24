@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # Bash mocks spliced into sbin/cmp100-unlock by tests/test_unlock_flow.py.
 # They replace every hardware-touching command. $SANDBOX is the fake root.
 ev() { printf '%s\n' "$*" >> "$SANDBOX/events"; }
