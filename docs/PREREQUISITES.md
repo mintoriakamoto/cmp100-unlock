@@ -9,7 +9,7 @@ soft-warns on the rest.
 | item | value |
 |---|---|
 | GPU | NVIDIA CMP 100-210, PCI `10de:1df4` rev a1, subsystem `10de:12b8`, 2 cards |
-| VBIOS | **88.00.51.00.04, a Tesla V100 VBIOS flashed by the owner before this work** (subsystem `10de:12b8`). Stock CMP 100-210 ships 88.00.9D.00.00 and identifies as "CMP 100-210"; these cards identify as `Tesla V100-PCIE-12GB` even while locked (tensor=0x999, Gen1) |
+| VBIOS | **88.00.51.00.04, a Tesla V100 VBIOS; the cards were bought already flashed by the seller** (subsystem `10de:12b8`). Stock CMP 100-210 ships 88.00.9D.00.00 and identifies as "CMP 100-210"; these cards identify as `Tesla V100-PCIE-12GB` even while locked (tensor=0x999, Gen1) |
 | HBM2 | 16 GiB physical (`nvidia-smi` shows 16384 MiB) |
 | Board | ASUS TUF GAMING B650E-PLUS WIFI, AMI BIOS 3886 (2026-06-24) |
 | CPU / RAM | AMD Ryzen 9 9950X, 32 GB |
@@ -20,9 +20,13 @@ soft-warns on the rest.
 
 ### VBIOS note
 
-The two test cards had already been flashed with a V100 VBIOS (88.00.51.00.04) when
-this project started; the Tensor gate (0x409664=0x999) and Gen1 link were still locked
-with that VBIOS, and the signed-ACR unlock here is what lifts them. So:
+The two test cards were purchased second-hand already flashed with a Tesla V100
+VBIOS (88.00.51.00.04, subsystem 10de:12b8). Sellers do this to lift what the VBIOS
+controls: the card enumerates as `Tesla V100-PCIE-12GB`, exposes the full 16 GiB HBM2,
+and the driver treats it as a V100. Measured on these cards, that flash does **not**
+touch the two things this project unlocks: at boot they still read Tensor gate
+0x409664=0x999 and train at PCIe Gen1, and the signed-ACR pass here is what lifts
+them. Both layers together give the numbers in RESULTS.md. So:
 
 - the V100 VBIOS alone does **not** unlock Tensor or Gen2 on `10de:1df4`;
 - upstream CmpUnlocker validated the same unlock on the stock CMP VBIOS

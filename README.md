@@ -13,7 +13,7 @@ flashed: no VBIOS, no eFuse. Reset or power loss puts the card back to stock.
 
 ## What you get
 
-Measured on two `10de:1df4` cards carrying a pre-flashed Tesla V100 VBIOS (88.00.51.00.04),
+Measured on two `10de:1df4` cards bought already flashed with a Tesla V100 VBIOS (88.00.51.00.04),
 driver 550.163.01, Ubuntu 22.04 HWE 6.8:
 
 | | stock | unlocked |
@@ -59,7 +59,8 @@ The whole pass takes about 3 s per card for Tensor and 5-8 s for Gen2.
 Full tested spec (board, slots, driver, firmware hashes, timings): [docs/PREREQUISITES.md](docs/PREREQUISITES.md).
 
 - CMP 100-210: `10de:1d84` or `10de:1df4`. Check with `lspci -nn | grep 10de`.
-- VBIOS: tested only with a Tesla V100 VBIOS (88.00.51.00.04) already on the cards;
+- VBIOS: tested only on cards the seller had flashed with a Tesla V100 VBIOS (88.00.51.00.04),
+  which handles identity/memory but leaves Tensor and Gen1 locked, hence this tool;
   upstream validated the same technique on stock CMP VBIOS 88.00.9D.00.00. See
   docs/PREREQUISITES.md, "VBIOS note". This tool never flashes.
 - Proprietary NVIDIA driver (550.163.01 tested; users report newer works). **Not**
