@@ -1,7 +1,40 @@
 # cmp100-unlock
 
-Boot-time Tensor-core and PCIe Gen2 unlock for the NVIDIA **CMP 100-210** mining card
-(GV100, PCI IDs `10de:1d84` and `10de:1df4`), running the stock proprietary driver.
+```
+                       .:-=+*##%%%%%%##*+=-:.
+                   .-*%%%%%%%%%%%%%%%%%%%%%%%%*-.
+                .=%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%=.
+              .*%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%*.
+             +%%%%%%%%%%%%#*+=-::::::-=+*#%%%%%%%%%%%%+
+            #%%%%%%%%%#=:.                 .:=#%%%%%%%%%#
+           #%%%%%%%%+.    . : . : . : . : .   .+%%%%%%%%#
+          =%%%%%%%*.    .--:.        .:--.      .*%%%%%%%=
+          %%%%%%%=     :%%%%%-      -%%%%%:       =%%%%%%%
+         :%%%%%%#      +% () %+    +% () %+        #%%%%%%:
+         -%%%%%%+      .+%%%%+.    .+%%%%+.        +%%%%%%-
+         :%%%%%%#          .          .            #%%%%%%:
+          %%%%%%%=              /\                =%%%%%%%
+          =%%%%%%%*.           /  \              .*%%%%%%%=
+           #%%%%%%%%+.       .______.          .+%%%%%%%%#
+            #%%%%%%%%%#=:.  \  ____  /      .:=#%%%%%%%%%#
+             +%%%%%%%%%%%%#*+ `----' +*#%%%%%%%%%%%%%+
+              .*%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%*.
+                .=%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%=.
+                   .-*%%%%%%%%%%%%%%%%%%%%%%%%*-.
+                       .:-=+*##%%%%%%##*+=-:.
+
+         tensor gate  0x999 ---------------------> 0x888
+         pcie         Gen1  ---------------------> Gen2
+         HMMA         ~512 cycles ---------------> 36.8 cycles
+```
+
+<p align="center"><b>cmp100-unlock</b> &nbsp;·&nbsp; 86 TFLOP/s of FP16 tensor cores, one <code>install.sh</code> away</p>
+
+---
+
+Boot-time Tensor-core and PCIe Gen2 unlock for the NVIDIA **CMP 100-210**: a locked-down
+GV100 that becomes a cheap 16 GB Volta for local LLMs and training once unlocked
+(PCI IDs `10de:1d84` and `10de:1df4`, stock proprietary driver).
 
     git clone https://github.com/father-lab/cmp100-unlock
     cd cmp100-unlock
@@ -128,7 +161,8 @@ Card in a bad state after a failure: **reboot**. Do not poke sysfs bind/unbind b
 ## Credits
 
 The signed-ACR technique, hook, payload builder and register map come from
-[Brazzo978/CmpUnlocker-100-210](https://github.com/Brazzo978/CmpUnlocker-100-210) (GPL-2.0).
+[Brazzo978/CmpUnlocker-100-210](https://github.com/Brazzo978/CmpUnlocker-100-210) (GPL-2.0),
+with Ubuntu port groundwork from [mintoriakamoto](https://github.com/mintoriakamoto/CmpUnlocker-100-210).
 This repo packages it as a single boot-time installer, adds `10de:1df4` support, the
 `noaccel` nouveau workaround for the unbind Oops, the upstream-port target-speed fix and
 the retrain retry loop that gets Gen2 on slots where the original script stops.
