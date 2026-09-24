@@ -36,7 +36,7 @@ Boot-time Tensor-core and PCIe Gen2 unlock for the NVIDIA **CMP 100-210**: a loc
 GV100 that becomes a cheap 16 GB Volta for local LLMs and training once unlocked
 (PCI IDs `10de:1d84` and `10de:1df4`, stock proprietary driver).
 
-    git clone https://github.com/father-lab/cmp100-unlock
+    git clone https://github.com/mintoriakamoto/cmp100-unlock
     cd cmp100-unlock
     sudo ./install.sh --run
 
@@ -162,7 +162,7 @@ Card in a bad state after a failure: **reboot**. Do not poke sysfs bind/unbind b
 
 The signed-ACR technique, hook, payload builder and register map come from
 [Brazzo978/CmpUnlocker-100-210](https://github.com/Brazzo978/CmpUnlocker-100-210) (GPL-2.0),
-with Ubuntu port groundwork from [mintoriakamoto](https://github.com/mintoriakamoto/CmpUnlocker-100-210).
+The Ubuntu 22.04 port work started in [mintoriakamoto/CmpUnlocker-100-210](https://github.com/mintoriakamoto/CmpUnlocker-100-210) (PR #1) and grew into this repo.
 This repo packages it as a single boot-time installer, adds `10de:1df4` support, the
 `noaccel` nouveau workaround for the unbind Oops, the upstream-port target-speed fix and
 the retrain retry loop that gets Gen2 on slots where the original script stops.
