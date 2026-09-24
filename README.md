@@ -85,7 +85,8 @@ only safe recovery). A marker file prevents the next boot from re-running into t
 same hang until you clear it or pass `--force`. Kernel cmdline `cmp100.skip`
 disables the unit entirely.
 
-The whole pass takes about 3 s per card for Tensor and 5-8 s for Gen2.
+The whole pass takes about 2-3 s per card for Tensor and 10-18 s for Gen2 (one or
+two retrain cycles); a two-card boot run is about 40 s from unit start.
 
 ## Requirements
 
@@ -108,11 +109,12 @@ Full tested spec (board, slots, driver, firmware hashes, timings): [docs/PREREQU
   before `display-manager.service`, so a desktop is fine as long as you don't run the
   script by hand with the desktop up. Dedicated compute box: `systemctl set-default multi-user.target`.
 
-Tested: Ubuntu 22.04 HWE (6.8.0-138), Debian 13, bare metal, x1 risers and a PCIe
-switch. The upstream CmpUnlocker project tested Proxmox passthrough too.
+Tested here: Ubuntu 22.04 HWE (6.8.0-138), bare metal, x1 risers and a PCIe switch.
+The upstream CmpUnlocker project validated Debian 13 and Proxmox passthrough.
 
 ## Commands
 
+    sudo ./install.sh [--no-enable|--run]   # --help for usage
     sudo cmp100-unlock status        # read-only: tensor reg, link speed, driver per card
     sudo systemctl start cmp100-unlock
     journalctl -u cmp100-unlock -b   # or /var/log/cmp100-unlock/run-*.log
@@ -120,8 +122,9 @@ switch. The upstream CmpUnlocker project tested Proxmox passthrough too.
     sudo cmp100-unlock --no-gen2     # tensor only
     sudo ./uninstall.sh [--purge]
 
-Config in `/etc/cmp100-unlock.conf`: explicit BDF list, Gen2 on/off, services to
-stop first, retrain attempts.
+Config in `/etc/cmp100-unlock.conf` (`CMP100_BDFS`, `CMP100_GEN2`,
+`CMP100_STOP_SERVICES`, `CMP100_RETRAIN_ATTEMPTS`): explicit BDF list, Gen2 on/off,
+services to stop first, retrain attempts.
 
 ## Troubleshooting
 
@@ -146,8 +149,9 @@ Card in a bad state after a failure: **reboot**. Do not poke sysfs bind/unbind b
 ## Layout
 
     install.sh / uninstall.sh
+    cmp100-unlock.conf            default config, installed to /etc/cmp100-unlock.conf if absent
     sbin/cmp100-unlock            the unlock script (bash, ~500 lines, fail-closed)
-    src/gv100_nouveau_acr_hook.c  kprobe hook, accepts 10de:1d84 and 10de:1df4
+    src/gv100_nouveau_acr_hook.c  kprobe hook + Makefile, accepts 10de:1d84 and 10de:1df4
     tools/build_payloads.py       derives the 5 payloads from stock firmware, hash-locked
     tools/cmp100-bench            HMMA latency / FP16 throughput via PTX JIT
     systemd/cmp100-unlock.service
@@ -157,11 +161,12 @@ Card in a bad state after a failure: **reboot**. Do not poke sysfs bind/unbind b
     docs/RESULTS.md               boot journal and benchmark output
     docs/REGISTERS.md             BAR0 register map and what is CPU-writable
     docs/TROUBLESHOOTING.md       failure messages and what to do
+    LICENSE                       GPL-2.0
 
 ## Credits
 
 The signed-ACR technique, hook, payload builder and register map come from
-[Brazzo978/CmpUnlocker-100-210](https://github.com/Brazzo978/CmpUnlocker-100-210) (GPL-2.0),
+[Brazzo978/CmpUnlocker-100-210](https://github.com/Brazzo978/CmpUnlocker-100-210) (GPL-2.0).
 The Ubuntu 22.04 port work started in [mintoriakamoto/CmpUnlocker-100-210](https://github.com/mintoriakamoto/CmpUnlocker-100-210) (PR #1) and grew into this repo.
 This repo packages it as a single boot-time installer, adds `10de:1df4` support, the
 `noaccel` nouveau workaround for the unbind Oops, the upstream-port target-speed fix and

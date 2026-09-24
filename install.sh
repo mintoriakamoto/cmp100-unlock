@@ -7,7 +7,9 @@
 #   sudo ./install.sh              install + enable boot unit
 #   sudo ./install.sh --no-enable  install only
 #   sudo ./install.sh --run        install, enable, and unlock right now
+#   ./install.sh --help            show this text
 set -Eeuo pipefail
+for a in "$@"; do case $a in -h|--help) sed -n '3,10p' "$0"; exit 0;; esac; done
 
 ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 STATE_DIR=/var/lib/cmp100-unlock
@@ -82,7 +84,7 @@ fi
 python3 "$ROOT/tools/build_payloads.py" \
     --fecs "$STATE_DIR/stock/fecs_sig.bin" --bl "$STATE_DIR/stock/bl.bin" \
     --ucode "$STATE_DIR/stock/ucode_load.bin" --output "$TMP/payloads" \
-    || die 'payload build failed: your stock firmware is not the tested version (see README: firmware baseline)'
+    || die 'payload build failed: your stock firmware is not the tested version (see docs/PREREQUISITES.md, "Firmware baseline")'
 
 # ---- hook ----
 log "building gv100_nouveau_acr_hook for $KVER"
