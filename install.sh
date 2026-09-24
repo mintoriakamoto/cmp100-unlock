@@ -37,6 +37,17 @@ command -v fuser >/dev/null || missing+=(psmisc)
 command -v zstd >/dev/null || missing+=(zstd)
 command -v python3 >/dev/null || missing+=(python3)
 command -v nvidia-smi >/dev/null || die 'nvidia-smi not found: install the proprietary NVIDIA driver first (550.x tested)'
+if [[ -r /proc/driver/nvidia/version ]]; then
+    grep -q 'Open Kernel Module' /proc/driver/nvidia/version && die 'nvidia open kernel module detected: Volta needs the proprietary flavour (nvidia-driver-5xx, not -open)'
+    log "nvidia: $(head -1 /proc/driver/nvidia/version | awk '{print $8}') (tested: 550.163.01)"
+fi
+if command -v mokutil >/dev/null && mokutil --sb-state 2>/dev/null | grep -q enabled; then
+    log 'WARNING: Secure Boot is enabled; the unsigned hook will not load unless you sign it with your MOK'
+fi
+KGCC=$(grep -oE 'gcc-[0-9]+|gcc \(.*\) [0-9]+' /proc/version | grep -oE '[0-9]+' | head -1 || true)
+if [[ -n $KGCC ]] && command -v "gcc-$KGCC" >/dev/null && [[ $(gcc -dumpversion | cut -d. -f1) != "$KGCC" ]]; then
+    export CC=gcc-$KGCC; log "kernel built with gcc-$KGCC; using CC=$CC for the hook"
+fi
 if (( ${#missing[@]} )); then
     if command -v apt-get >/dev/null; then
         log "installing: ${missing[*]}"
@@ -77,7 +88,7 @@ python3 "$ROOT/tools/build_payloads.py" \
 log "building gv100_nouveau_acr_hook for $KVER"
 cp -r "$ROOT/src/." "$LIB_DIR/src/"
 make -C "$LIB_DIR/src" clean >/dev/null
-make -C "$LIB_DIR/src" >/dev/null
+make -C "$LIB_DIR/src" ${CC:+CC=$CC} >/dev/null
 [[ $(modinfo -F vermagic "$LIB_DIR/src/gv100_nouveau_acr_hook.ko") == "$KVER "* ]] || die 'built hook vermagic mismatch'
 
 # ---- install ----

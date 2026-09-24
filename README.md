@@ -56,6 +56,8 @@ The whole pass takes about 3 s per card for Tensor and 5-8 s for Gen2.
 
 ## Requirements
 
+Full tested spec (board, slots, driver, firmware hashes, timings): [docs/PREREQUISITES.md](docs/PREREQUISITES.md).
+
 - CMP 100-210: `10de:1d84` or `10de:1df4`. Check with `lspci -nn | grep 10de`.
 - Proprietary NVIDIA driver (550.163.01 tested; users report newer works). **Not**
   the open kernel module flavour: Volta is not supported there.
@@ -114,7 +116,10 @@ Card in a bad state after a failure: **reboot**. Do not poke sysfs bind/unbind b
     systemd/cmp100-unlock.service
     modprobe.d/cmp100-unlock.conf blacklist nouveau + nvidia_drm, RMPcieLinkSpeed=0x1
     tests/                        mocked full-flow tests (no hardware)
-    docs/                         register notes, results, methodology
+    docs/PREREQUISITES.md         every tested version, hash and hardware detail
+    docs/RESULTS.md               boot journal and benchmark output
+    docs/REGISTERS.md             BAR0 register map and what is CPU-writable
+    docs/TROUBLESHOOTING.md       failure messages and what to do
 
 ## Credits
 
