@@ -43,7 +43,18 @@ busybox() { # devmem ADDR 32 [VALUE]
         $((0x88610)))  reg "$card" policy ;;
         $((0x8872c)))  reg "$card" vector ;;
         $((0x88084)))  echo 0x00453C12 ;;
+        $((0x880a4)))  echo 0x00000006 ;;
         $((0x880a8)))  echo 0x00000002 ;;
+        $((0x2157c))|$((0x21580))) echo "${MOCK_FUSED:-0x00000000}" ;;
+        $((0x8841c)))
+            if [[ -n $val ]]; then
+                ev "misc1_write $card $val"
+                printf '%s' "$val" > "$SANDBOX/regs/$card/misc1"
+                # clamp cleared while pre-POST -> card can train Gen3 on next upstream retrain
+                [[ -e $SANDBOX/regs/$card/prepost ]] && touch "$SANDBOX/regs/$card/gen3ok"
+            else
+                [[ -s $SANDBOX/regs/$card/misc1 ]] && cat "$SANDBOX/regs/$card/misc1" || echo 0xC0346500
+            fi ;;
         $((0x88088)))  reg "$card" status ;;
         $((0x8c040)))
             if [[ -n $val ]]; then
@@ -62,10 +73,27 @@ busybox() { # devmem ADDR 32 [VALUE]
 }
 setpci() {
     ev "setpci $*"
-    local s=$2 f=$3
+    local s=$2 f=${3%%=*} v=${3#*=}
     case $f in
-        CAP_EXP+0c.l) echo 00000042 ;;
-        CAP_EXP+12.w) printf '000%s\n' "$(reg "$s" lnksta)" ;;
+        CAP_EXP+0c.l) echo 00000043 ;;
+        CAP_EXP+10.w)
+            # retrain from upstream port: children with gen3ok train to Gen3
+            if [[ $v == 0020:0020 ]]; then
+                local c
+                for c in 0000:01:00.0 0000:05:00.0; do
+                    if [[ $(reg "$c" upstream) == "$s" && -e $SANDBOX/regs/$c/gen3ok && -z ${MOCK_NO_GEN3:-} ]]; then
+                        printf 3 > "$SANDBOX/regs/$c/lnksta"; printf 0x10130143 > "$SANDBOX/regs/$c/status"
+                    fi
+                done
+            fi ;;
+        CAP_EXP+12.w)
+            if [[ $s == devices ]]; then   # upstream port: reports the fastest child link, never "training"
+                local best=1 c
+                for c in 0000:01:00.0 0000:05:00.0; do (( $(reg "$c" lnksta) > best )) && best=$(reg "$c" lnksta); done
+                printf '000%s\n' "$best"
+            else
+                printf '000%s\n' "$(reg "$s" lnksta)"
+            fi ;;
         CAP_EXP+30.w) echo 0042 ;;
         COMMAND) echo 0007 ;;
         *) : ;;
@@ -81,14 +109,21 @@ nvidia-smi() {
     done
 }
 io_write() {
-    local value=$1 path=$2 drv sha
+    local value=$1 path=$2 drv sha c
     ev "write $value ${path#"$SANDBOX"}"
     case $path in
         */unbind)
             [[ $value == "${MOCK_STICKY_UNBIND:-}" ]] && return 0
             rm -f "$SANDBOX/sys/bus/pci/devices/$value/driver" ;;
+        */reset)
+            # SBR: back to POR state, clamp restored, Gen1, tensor 0x999, pre-POST window open
+            c=${path%/reset}; c=${c##*/}
+            printf 0xC0346500 > "$SANDBOX/regs/$c/misc1"; printf 1 > "$SANDBOX/regs/$c/lnksta"
+            printf 0x10110141 > "$SANDBOX/regs/$c/status"; printf 0x00000999 > "$SANDBOX/regs/$c/tensor"
+            rm -f "$SANDBOX/regs/$c/gen3ok"; touch "$SANDBOX/regs/$c/prepost" ;;
         */bind)
             drv=${path%/bind}; drv=${drv##*/}
+            rm -f "$SANDBOX/regs/$value/prepost"   # any driver bind POSTs the card
             ln -sfn "../../drivers/$drv" "$SANDBOX/sys/bus/pci/devices/$value/driver"
             if [[ $drv == nouveau && -e $SANDBOX/armed ]]; then
                 rm "$SANDBOX/armed"

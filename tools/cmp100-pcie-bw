@@ -1,0 +1,28 @@
+#!/usr/bin/env python3
+# PCIe H2D/D2H bandwidth per GPU via the CUDA driver API (no toolkit needed).
+import ctypes, time, sys
+cu = ctypes.CDLL("libcuda.so.1")
+def ck(r, w):
+    if r != 0:
+        s = ctypes.c_char_p(); cu.cuGetErrorString(r, ctypes.byref(s)); raise SystemExit(f"{w}: {s.value.decode()}")
+ck(cu.cuInit(0), "init")
+n = ctypes.c_int(); ck(cu.cuDeviceGetCount(ctypes.byref(n)), "count")
+SZ = 256 << 20
+for i in range(n.value):
+    dev = ctypes.c_int(); ck(cu.cuDeviceGet(ctypes.byref(dev), i), "dev")
+    bus = ctypes.create_string_buffer(32); cu.cuDeviceGetPCIBusId(bus, 32, dev)
+    ctx = ctypes.c_void_p(); ck(cu.cuCtxCreate_v2(ctypes.byref(ctx), 0, dev), "ctx")
+    host = ctypes.c_void_p(); ck(cu.cuMemAllocHost_v2(ctypes.byref(host), SZ), "pinned")
+    d = ctypes.c_ulonglong(); ck(cu.cuMemAlloc_v2(ctypes.byref(d), SZ), "dmem")
+    res = {}
+    for name, fn, args in (("H2D", cu.cuMemcpyHtoD_v2, lambda: (d, host, SZ)),
+                           ("D2H", cu.cuMemcpyDtoH_v2, lambda: (host, d, SZ))):
+        fn(*args()); ck(cu.cuCtxSynchronize(), "sync")
+        best = 0
+        for _ in range(5):
+            t0 = time.perf_counter(); fn(*args()); ck(cu.cuCtxSynchronize(), "sync")
+            gbps = SZ / (time.perf_counter() - t0) / 1e9
+            best = max(best, gbps)
+        res[name] = best
+    print(f"{bus.value.decode()}  H2D {res['H2D']:.3f} GB/s  D2H {res['D2H']:.3f} GB/s")
+    cu.cuMemFree_v2(d); cu.cuMemFreeHost(host); cu.cuCtxDestroy_v2(ctx)

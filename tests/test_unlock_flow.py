@@ -38,6 +38,8 @@ class Flow(unittest.TestCase):
                 put(f'regs/{bdf}/status', '0x10110142')
                 put(f'regs/{bdf}/lnksta', '1')
                 put(f'regs/{bdf}/xp', '0x08785800')
+                put(f'regs/{bdf}/upstream', 'devices')  # parent_port() of a flat sandbox path
+                put(f'sys/bus/pci/devices/{bdf}/reset', '')
             put('sys/bus/pci/drivers_autoprobe', '1')
             put('proc/modules', 'nvidia_uvm 1 0\nnvidia 1 0\n')
             put('proc/cmdline', 'quiet\n')
@@ -99,22 +101,65 @@ class Flow(unittest.TestCase):
         self.assertEqual(x['autoprobe'], '1')
         self.assertFalse(x['marker'])
         self.assertIn('modprobe --config /dev/null nouveau modeset=2 noaccel=1 runpm=0', x['ev'])
-        self.assertEqual(x['ev'].count('insmod '), 6, 'tensor+policy+vector per card')
-        self.assertIn('Gen2 stage PASS', x['out'])
+        self.assertEqual(x['ev'].count('insmod '), 2, 'tensor only; Gen3 needs no signed write')
+        self.assertIn('Gen3 stage PASS', x['out'])
+        self.assertIn('Gen3 held through Tensor stage', x['out'])
+        self.assertEqual(x['ev'].count('/reset'), 2, 'one SBR per card')
+        self.assertIn('misc1_write 0000:01:00.0 0x00340500', x['ev'])
+        self.assertNotIn('xp_write', x['ev'], 'no Gen2 fallback when Gen3 trained')
         self.assertIn('PASS; log', x['out'])
+        # ordering: SBR + clamp clear before any nouveau bind on the same card
         ev = x['ev']
+        self.assertLess(ev.index('misc1_write 0000:01:00.0'), ev.index('write 0000:01:00.0 /sys/bus/pci/drivers/nouveau/bind'))
         self.assertLess(ev.index('write 0000:01:00.0 /sys/bus/pci/drivers/nvidia/bind'),
                         ev.index('write 0000:05:00.0 /sys/bus/pci/drivers/nvidia/unbind'),
                         'card 2 must not start before card 1 is back on nvidia')
+
+    def test_gen2_path_explicit(self):
+        x = self.run_script(['--gen2'])
+        self.assertEqual(x['rc'], 0, x['out'])
+        self.assertEqual(x['ev'].count('insmod '), 6, 'tensor+policy+vector per card')
+        self.assertIn('Gen2 stage PASS', x['out'])
+        self.assertNotIn('/reset', x['ev'])
+
+    def test_gen3_fused_card_refused(self):
+        x = self.run_script(env_extra={'MOCK_FUSED': '0x00000001'})
+        self.assertNotEqual(x['rc'], 0)
+        self.assertIn('fused', x['out'])
+        self.assertNotIn('/reset', x['ev'], 'no SBR on a card the clamp clear cannot help')
+
+    def test_gen3_train_failure_falls_to_error_and_releases_override(self):
+        x = self.run_script(env_extra={'MOCK_NO_GEN3': '1', 'CMP100_RETRAIN_ATTEMPTS': '2'})
+        self.assertNotEqual(x['rc'], 0)
+        self.assertIn('did not train to Gen3', x['out'])
+        self.assertIn('write  /sys/bus/pci/devices/0000:01:00.0/driver_override', x['ev'],
+                      'failure path must drop the test-hold override')
+
+    def test_gen3_already_trained_falls_back_to_gen2_if_lost(self):
+        # card 1 at Gen3 already, card 2 loses Gen3 during Tensor (simulate: never trains)
+        def pre(p, put):
+            put('regs/0000:01:00.0/lnksta', '3')
+            put('regs/0000:01:00.0/status', '0x10130143')
+        x = self.run_script(pre=pre)
+        self.assertEqual(x['rc'], 0, x['out'])
+        self.assertIn('0000:01:00.0: already Gen3', x['out'])
+        self.assertEqual(x['ev'].count('/reset'), 1)
 
     def test_already_unlocked_is_noop(self):
         def pre(p, put):
             for b in ['0000:01:00.0', '0000:05:00.0']:
                 put(f'regs/{b}/tensor', '0x00000888')
-                put(f'regs/{b}/lnksta', '2')
-                put(f'regs/{b}/status', '0x10120142')
+                put(f'regs/{b}/lnksta', '3')
+                put(f'regs/{b}/status', '0x10130143')
         x = self.run_script(pre=pre)
         self.assertEqual(x['rc'], 0, x['out'])
+        self.assertIn('already unlocked; nothing to do', x['out'])
+        # a Gen2-unlocked box is done when the user only asked for Gen2
+        def pre2(p, put):
+            for b in ['0000:01:00.0', '0000:05:00.0']:
+                put(f'regs/{b}/tensor', '0x00000888')
+                put(f'regs/{b}/lnksta', '2')
+        x = self.run_script(['--gen2'], pre=pre2)
         self.assertIn('already unlocked; nothing to do', x['out'])
         for forbidden in ['unbind', 'insmod', 'modprobe', 'rmmod']:
             self.assertNotIn(forbidden, x['ev'])
@@ -124,7 +169,7 @@ class Flow(unittest.TestCase):
             put('regs/0000:01:00.0/tensor', '0x00000888')
             put('regs/0000:01:00.0/lnksta', '2')
             put('regs/0000:01:00.0/status', '0x10120142')
-        x = self.run_script(pre=pre)
+        x = self.run_script(['--gen2'], pre=pre)
         self.assertEqual(x['rc'], 0, x['out'])
         self.assertIn('0000:01:00.0: Tensor already unlocked', x['out'])
         self.assertIn('0000:01:00.0: already Gen2', x['out'])
@@ -134,7 +179,7 @@ class Flow(unittest.TestCase):
         def pre(p, put):
             for b in ['0000:01:00.0', '0000:05:00.0']:
                 put(f'regs/{b}/tensor', '0x00000888')
-        x = self.run_script(pre=pre)
+        x = self.run_script(['--gen2'], pre=pre)
         self.assertEqual(x['rc'], 0, x['out'])
         self.assertEqual(x['ev'].count('insmod '), 4, 'only policy+vector per card')
 
@@ -184,10 +229,14 @@ class Flow(unittest.TestCase):
         self.assertTrue(x['marker'], 'marker must survive a failure')
         tail = x['ev'][x['ev'].rfind('/unbind'):]
         self.assertNotIn('/bind', tail, 'no rebind attempt after a failed unbind')
+        self.assertIn('Gen3 stage PASS', x['out'], 'card 1 Gen3 finished before card 2 failed')
+        # with --gen2 the Tensor stage runs first, so card 1's unlock must survive card 2's failure
+        x = self.run_script(['--gen2'], env_extra={'MOCK_STICKY_UNBIND': '0000:05:00.0'})
+        self.assertNotEqual(x['rc'], 0)
         self.assertEqual(x['regs']['0000:01:00.0'], '0x00000888', 'card 1 unlock stays')
 
     def test_gen2_retry_then_fail_keeps_tensor(self):
-        x = self.run_script(env_extra={'MOCK_NO_GEN2': '1', 'CMP100_RETRAIN_ATTEMPTS': '2'})
+        x = self.run_script(['--gen2'], env_extra={'MOCK_NO_GEN2': '1', 'CMP100_RETRAIN_ATTEMPTS': '2'})
         self.assertNotEqual(x['rc'], 0)
         self.assertIn('did not reach Gen2 after 2 attempts', x['out'])
         self.assertEqual(x['out'].count('retrain attempt'), 2)

@@ -13,8 +13,9 @@ soft-warns on the rest.
 | HBM2 | 16 GiB physical (`nvidia-smi` shows 16384 MiB) |
 | Board | ASUS TUF GAMING B650E-PLUS WIFI, AMI BIOS 3886 (2026-06-24) |
 | CPU / RAM | AMD Ryzen 9 9950X, 32 GB |
-| Card 1 slot | CPU root port `0000:00:01.1` (AMD 1022:14db), x1 riser, BIOS targets Gen1 by default |
+| Card 1 slot | CPU root port `0000:00:01.1` (AMD 1022:14db), x1 riser, BIOS targets Gen1 by default (the script raises it to Gen3) |
 | Card 2 slot | behind chipset PCIe switch `0000:04:00.0` (AMD 1022:43f5), x1 riser, target Gen4 |
+| PCIe fuses | `OPT_PCIE_BOOT_GEN23_DISABLE` (0x2157c) = 0, `OPT_PCIE_BOOT_GEN3_DISABLE` (0x21580) = 0 on both cards (required for the Gen3 stage) |
 | Secure Boot | disabled (`mokutil --sb-state`) |
 | Display | headless; GDM and switcheroo-control masked, default target multi-user |
 
@@ -25,10 +26,10 @@ VBIOS (88.00.51.00.04, subsystem 10de:12b8). Sellers do this to lift what the VB
 controls: the card enumerates as `Tesla V100-PCIE-12GB`, exposes the full 16 GiB HBM2,
 and the driver treats it as a V100. Measured on these cards, that flash does **not**
 touch the two things this project unlocks: at boot they still read Tensor gate
-0x409664=0x999 and train at PCIe Gen1, and the signed-ACR pass here is what lifts
-them. Both layers together give the numbers in RESULTS.md. So:
+0x409664=0x999 and train at PCIe Gen1; the pre-POST clamp clear and the signed-ACR
+pass here are what lift them. Both layers together give the numbers in RESULTS.md. So:
 
-- the V100 VBIOS alone does **not** unlock Tensor or Gen2 on `10de:1df4`;
+- the V100 VBIOS alone does **not** unlock Tensor or PCIe Gen2/Gen3 on `10de:1df4`;
 - upstream CmpUnlocker validated the same unlock on the stock CMP VBIOS
   (88.00.9D.00.00, `10de:1d84`), so a VBIOS flash is not believed to be required;
 - but our only verified configuration is the V100 VBIOS. If you are on stock CMP
@@ -58,7 +59,8 @@ hook and script refuse every other device ID.
 | dkms | 2.8.7 (for the NVIDIA driver, not for the hook) |
 
 Upstream CmpUnlocker validated Debian 13 with the same driver and reports users
-succeeding on newer 5xx drivers. The Gen2 stage uses `RMPcieLinkSpeed=0x1` via
+succeeding on newer 5xx drivers. The Gen3 stage needs nothing from the driver (it runs
+with the card unbound); the Gen2 fallback uses `RMPcieLinkSpeed=0x1` via
 `NVreg_RegistryDwords`, which exists in every 5xx driver.
 
 ## Firmware baseline (hard requirement)
@@ -92,7 +94,7 @@ uses it during the run.
 - apt-installs any missing: `build-essential linux-headers-$(uname -r) busybox pciutils psmisc zstd python3`
 - `/var/lib/cmp100-unlock/stock/` snapshot of the three firmware files, `manifest.env` (0600) with all hashes + hook kernel version
 - `/usr/lib/cmp100-unlock/` payloads, `gv100_nouveau_acr_hook.ko`, `src/` (rebuilt on `install.sh` after a kernel upgrade)
-- `/usr/local/sbin/cmp100-unlock`, `/usr/local/bin/cmp100-bench`
+- `/usr/local/sbin/cmp100-unlock`, `/usr/local/bin/cmp100-bench`, `/usr/local/bin/cmp100-pcie-bw`
 - `/etc/systemd/system/cmp100-unlock.service` (enabled unless `--no-enable`)
 - `/etc/modprobe.d/cmp100-unlock.conf`: blacklist `nouveau` and `nvidia_drm`, `options nvidia NVreg_RegistryDwords="RMPcieLinkSpeed=0x1"`
 - `/etc/cmp100-unlock.conf` (only if absent)
@@ -113,15 +115,23 @@ wrong project.
 
 | stage | per card |
 |---|---|
-| Tensor (unbind, ACR boot, unbind, rebind, nvidia-smi ready) | 2-3 s |
-| Gen2 signed writes (two ACR boots) | ~1 s + 5 s nvidia-smi wait |
-| Gen2 retrain cycle | ~6 s each, 1-2 cycles |
-| whole boot run | ~40 s |
+| Gen3 (unbind, secondary bus reset, clamp clear, retrain, rebind) | ~4 s, 1 retrain attempt on both slots |
+| Tensor (unbind, ACR boot, unbind, rebind, nvidia-smi ready) | ~2 s |
+| whole run from locked state, Gen3 + Tensor | 18 s for two cards |
+| unattended reboot: unit done, both cards Gen3 + 0x888 | 24 s after boot |
+| Gen2 fallback: signed writes (two ACR boots) | ~1 s + 5 s nvidia-smi wait |
+| Gen2 fallback: retrain cycle | ~6 s each, 1-2 cycles (1.0.0 boot run with Gen2: ~40 s) |
 | re-run when already unlocked | ~3 s, no mutation |
+
+PCIe bandwidth per lane (`cmp100-pcie-bw`, 256 MiB pinned, best of 5): Gen1 0.194 / 0.214
+GB/s H2D / D2H, Gen2 0.386 / 0.427, Gen3 0.806 / 0.845 (card 1) and 0.794 / 0.845 (card 2).
 
 ## Known limits
 
 - Volatile. Reboot, power loss, `nvidia-smi -r`, or a driver-initiated GPU reset re-locks the card until the unit runs again (the unit only runs at boot; re-run it by hand after a reset).
-- PCIe Gen3 does not stick on this silicon (upstream: most probably fused). x16 needs a VBIOS mod and the driver refuses it; not part of this project.
+- PCIe Gen3: **yes** on `10de:1df4`. The Gen1 cap is a soft clamp (`NV_XVE_PRIV_MISC_1`, 0x8841c), not a fuse; the fuse words 0x2157c / 0x21580 read 0 here. It only clears pre-POST (after a secondary bus reset, before any driver binds), which is why the unit does it first. On a card where those fuses are non-zero the script refuses and the signed-write Gen2 path (`--gen2`) is the ceiling.
+- PCIe Gen4: **no**. With the clamp cleared `LnkCap2` advertises 2.5/5/8 GT/s only; GV100 is PCIe 3.0 silicon.
+- x16: **no**. The lane count comes from the IFR at flash offset 0x214, non-volatile; changing it means flashing, which this project does not do.
+- After a Gen3 run `nvidia-smi` reports `pcie.link.gen.current` 2 and `lspci` says `8GT/s (strange)`: the driver re-clamps the advertised cap but not the live link. Use `lspci` LnkSta, sysfs `current_link_speed` or `cmp100-pcie-bw` for the truth.
 - The signed-ACR payloads only exist for the firmware revision above. A `linux-firmware` update that changes those three files stops the installer until the builder is re-derived.
 - Not tested: Proxmox passthrough (upstream did), Secure Boot with a MOK-signed hook, drivers other than 550.163.01, `10de:1d84`.
