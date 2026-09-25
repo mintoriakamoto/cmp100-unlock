@@ -225,7 +225,7 @@ Card in a bad state after a failure: **reboot**. Do not poke sysfs bind/unbind b
 
 The signed-ACR technique, hook, payload builder and register map come from
 [Brazzo978/CmpUnlocker-100-210](https://github.com/Brazzo978/CmpUnlocker-100-210) (GPL-2.0).
-The Ubuntu 22.04 port work started in [mintoriakamoto/CmpUnlocker-100-210](https://github.com/mintoriakamoto/CmpUnlocker-100-210) (PR #1) and grew into this repo.
+The Ubuntu 22.04 port work started in [mintoriakamoto/](https://github.com/mintoriakamoto/CMP100-210xFULLTENSORSxGEN3x1
 This repo packages it as a single boot-time installer, adds `10de:1df4` support, the
 `noaccel` nouveau workaround for the unbind Oops, the upstream-port target-speed fix and
 the retrain retry loop that gets Gen2 on slots where the original script stops.
